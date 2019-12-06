@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Template para criação de job queue aws batch
+
+Parameters:
+  JobQueueName:
+    Type: String
+  Order:
+    Type: String
+    Default: 1
+  Priority:
+    Type: String
+  ComputeEnvironment:
+    Type: String
+
+Resources:
+  JobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      ComputeEnvironmentOrder:
+        - Order: !Ref Order
+          ComputeEnvironment: !Ref ComputeEnvironment
+      JobQueueName: !Ref JobQueueName
+      Priority: !Ref Priority
+      State: Enabled

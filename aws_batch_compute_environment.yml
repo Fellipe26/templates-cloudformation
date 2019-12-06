@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Template para criação de compute environment aws batch.
+
+Parameters:
+  KeyName:
+    Type: String
+  MaxvCpus:
+    Type: String
+  MinvCpus:
+    Type: String
+  DesiredvCpus:
+    Type: String
+  InstanceTypes:
+    Type: String
+  VpcId:
+    Type: String
+  ImageId:
+    Type: String
+  Subnets:
+    Type: String
+  Product:
+    Type: String
+  Environment:
+    Type: String
+
+Resources:
+  RoleJobDefinition:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: EcsInstance
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - '*'
+                Resource: '*'
+
+  RoleComputeEnvironment:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: "batch.amazonaws.com"}
+            Action: "sts:AssumeRole"
+      Path: /service-role/
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
+
+  InstanceEcsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: "ec2.amazonaws.com"}
+            Action: "sts:AssumeRole"
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+
+  IamInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref InstanceEcsRole
+
+  SecurityGroupBatch:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: EC2 Security Group for instances launched.
+      VpcId: !Ref VpcId
+
+  ComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    DependsOn:
+      - RoleJobDefinition
+      - IamInstanceProfile
+      - InstanceEcsRole
+      - RoleComputeEnvironment
+      - SecurityGroupBatch
+    Properties:
+      Type: MANAGED
+      ServiceRole: !GetAtt RoleComputeEnvironment.Arn
+      ComputeResources:
+        SecurityGroupIds:
+          - !Ref SecurityGroupBatch
+        Type: EC2
+        Subnets:
+          - !Ref Subnets
+        Ec2KeyPair: !Ref KeyName
+        MaxvCpus: !Ref MaxvCpus
+        MinvCpus: !Ref MinvCpus
+        DesiredvCpus: !Ref DesiredvCpus
+        ImageId: !Ref ImageId
+        InstanceRole: !GetAtt IamInstanceProfile.Arn
+        InstanceTypes:
+          - !Ref InstanceTypes
+        Tags:
+          "Business Unit" : "Operations"
+          "Project" : "core"
+          "Application ID" : "aws-batch"
+          "Product" : !Ref Product
+          "Environment" : !Ref Environment
+      State: ENABLED
+
+Outputs:
+  ComputeEnvironmentArn:
+    Value:
+      !Ref ComputeEnvironment
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-ComputeEnvironment'
+
+  RoleJobDefinition:
+    Value:
+      !GetAtt [ RoleJobDefinition, Arn ]
+    Export: 
+      Name:
+        'Fn::Sub': '${AWS::StackName}-RoleJobDefinition'

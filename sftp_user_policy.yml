@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Template para criacao de politica do usuario do sftp transfer
+
+Parameters:
+  policyName:
+    Type: String
+  bucketName:
+    Type: String
+
+Resources:
+  AccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref policyName
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - transfer.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: !Ref policyName
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowListingOfUserFolder
+                Action:
+                  - 's3:ListBucket'
+                  - 's3:GetBucketLocation'
+                Effect: Allow
+                Resource:
+                  - !Join ['', [ 'arn:aws:s3:::', !Ref bucketName ] ]
+              - Sid: HomeDirObjectAccess
+                Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                  - 's3:DeleteObjectVersion'
+                  - 's3:DeleteObject'
+                  - 's3:GetObjectVersion'
+                Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref bucketName, '/*' ] ]
+
+Outputs:
+  AccessRole:
+    Description: 'Role Name'
+    Value: !GetAtt AccessRole.Arn
+    Export:
+      Name: !Sub 'AccessRole-${AWS::StackName}'
+
+  AccessPolicy:
+    Description: 'Policy Name'
+    Value: !Ref policyName
+    Export:
+      Name: !Sub 'policyName-${AWS::StackName}'           
