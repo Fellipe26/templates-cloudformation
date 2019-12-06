@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Aurora for microservices db
+
+Parameters:  
+  DBClusterIdentifierParameter:
+    Type: String
+  
+  DBInstanceClassParameter:
+    Type: String
+
+  DBPassword:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: MicroserviceDbPassword
+
+  DBSubnetGroupNameParameter:
+    Type: String
+
+  VpcSecurityGroupIdsParameter:
+    Type: String
+  
+  HostedZoneIDRoute53Parameter:
+    Type: String
+
+  R53EntryNameParameter:
+    Type: String
+
+Resources:
+  AuroraCluster:
+    Type: "AWS::RDS::DBCluster"
+    Properties:
+      BackupRetentionPeriod: 7
+      DatabaseName: microservice
+      DBClusterIdentifier: microservices-cluster
+      DBSubnetGroupName: !Ref DBSubnetGroupNameParameter 
+      DBClusterParameterGroupName: default.aurora-postgresql10
+      Engine: aurora-postgresql
+      EngineVersion: 10.4
+      MasterUsername: user_db
+      MasterUserPassword: !Ref DBPassword
+      Port: 5432
+      StorageEncrypted: True
+      VpcSecurityGroupIds: 
+      - !Ref VpcSecurityGroupIdsParameter
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllowMajorVersionUpgrade: False
+      AutoMinorVersionUpgrade: True
+      CopyTagsToSnapshot: True
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: !Ref DBInstanceClassParameter
+      DBInstanceIdentifier: microservices2
+      DBSubnetGroupName: !Ref DBSubnetGroupNameParameter
+      Engine: aurora-postgresql
+      PubliclyAccessible: False
+      StorageEncrypted: True
+
+  Route53Entry:
+    Type: AWS::Route53::RecordSet
+    DependsOn: DBInstance
+    Properties:
+      HostedZoneId: !Ref HostedZoneIDRoute53Parameter
+      Name: !Ref R53EntryNameParameter 
+      Type: CNAME
+      TTL: 60
+      ResourceRecords:
+      - !GetAtt [DBInstance, Endpoint.Address]
+
+  AutoScalerTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: 1
+      MaxCapacity: 4
+      ResourceId: !Sub "cluster:${AuroraCluster}"
+      ScalableDimension: rds:cluster:ReadReplicaCount
+      ServiceNamespace: rds
+      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/rds.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_RDSCluster"
+
+  AutoScaler:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      ScalingTargetId: !Ref AutoScalerTarget
+      ServiceNamespace: rds
+      PolicyName: Rds-Auto-Scaling
+      PolicyType: TargetTrackingScaling
+      ScalableDimension: rds:cluster:ReadReplicaCount
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: RDSReaderAverageCPUUtilization
+        TargetValue: 50.0
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+        DisableScaleIn: False

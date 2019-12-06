@@ -1,0 +1,333 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Test for ecs.
+Transform: AWS::Serverless-2016-10-31
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Container configuration
+        Parameters:
+          - ContainerName
+          - ImageURI
+          - ImageVersion
+          - ContainerMemory
+          - ContainerCpuUnits
+          - Env
+          - ContainerExpPort
+      - Label:
+          default: Container startup configurations
+        Parameters:
+          - Environment
+          - PathPier
+          - PathHelloWord
+          - PathCronos
+          - CronosAmount
+          - UrlDataBase
+          - UserDataBase
+          - MicroserviceDbPasswordParameter
+          - QueueNameTransaction
+          - QueueNameRollback
+Parameters:
+  Env:
+    Type: String
+    Description: Definition of environment
+  StackNameParam:
+    Type: String
+    Description: Nome da stack criada de ECS para aplicar este CF
+  EnvSufix:
+    Description: 'Sufixo para o nome do container, ficando cdt-(stack-name)[sufixo] '
+    Type: String
+  ImageURI:
+    Type: String
+    Description: URI da Imagem
+  ImageVersion:
+    Type: String
+    Description: Versao da imagem
+  Versao:
+    Type: String
+    Description: Versao stack
+  ContainerMemory:
+    Type: Number
+    Description: Quantidade de memoria para o container
+  ContainerCpuUnits:
+    Type: Number
+    Description: Quantidade de CPU para o container
+  ROLE:
+    Type: String
+    Description: Nome da Role
+  ContainerExpPort:
+    Type: String
+    Description: Port of Container
+  DesiredCountService:
+    Type: String
+    Description: Count of service
+  ServiceScalingTargetMin:
+    Type: Number
+    Description: Auto scale container Min
+  ServiceScalingTargetMax:
+    Type: Number
+    Description: Auto scale container Min
+
+Conditions:
+  isItProd:
+    !Or
+      - !Equals [ !Ref Env, prd ]
+      - !Equals [ !Ref Env, prdbr ]
+
+Resources:
+  ServiceScalingTarget:
+    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
+    DependsOn: service
+    Properties:
+      MinCapacity:
+        Ref: ServiceScalingTargetMin
+      MaxCapacity:
+        Ref: ServiceScalingTargetMax
+      ResourceId:
+        'Fn::Join':
+          - ''
+          - - service/
+            - 'Fn::ImportValue':
+                'Fn::Join':
+                  - ''
+                  - - Ref: StackNameParam
+                    - '-ECS-CLUSTER'
+            - /
+            - 'Fn::GetAtt':
+                - service
+                - Name
+      RoleARN:
+        'Fn::GetAtt':
+          - AutoscalingRole
+          - Arn
+      ScalableDimension: 'ecs:service:DesiredCount'
+      ServiceNamespace: ecs
+  ServiceScalingPolicyUp:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: AStepPolicy
+      PolicyType: StepScaling
+      ScalingTargetId:
+        Ref: ServiceScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: PercentChangeInCapacity
+        Cooldown: 70
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalLowerBound: 0
+            ScalingAdjustment: 200
+  NLBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: NLB Security Group
+      VpcId:
+        'Fn::ImportValue':
+          'Fn::Join':
+            - ''
+            - - Ref: StackNameParam
+              - '-VpcId'
+  NLBSecurityGroupNLBports:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId:
+        Ref: NLBSecurityGroup
+      IpProtocol: tcp
+      FromPort: '5000'
+      ToPort: '5000'
+      SourceSecurityGroupId:
+        'Fn::ImportValue':
+          'Fn::Join':
+            - ''
+            - - Ref: StackNameParam
+              - '-EcsSecurityGroup'
+  NLBSecurityGroupHTTPinbound:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId:
+        Ref: NLBSecurityGroup
+      IpProtocol: tcp
+      FromPort: '5000'
+      ToPort: '5000'
+      CidrIp: 0.0.0.0/0
+      
+  NLBListenerHTTP:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    DependsOn:
+      - ECSNLB
+      - TargetGroupECS
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: TargetGroupECS
+      LoadBalancerArn:
+        Ref: ECSNLB
+      Port: '5000'
+      Protocol: TCP
+
+  ECSNLB:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: Test-INTERNAL-NLB
+      Scheme: internal
+      Type: network
+      IpAddressType: ipv4
+      Subnets:
+        - !ImportValue vpc-subnetPrvA
+        - !If
+          - isItProd
+          - !Ref Subnet1
+          - !Ref Subnet2
+
+  TargetGroupECS:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    DependsOn:
+      - ECSNLB
+    Properties:
+      Name: INTERNAL-Test-TG
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: TCP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      Port: '5000'
+      Protocol: TCP
+      UnhealthyThresholdCount: 2
+      VpcId:
+        'Fn::ImportValue':
+          'Fn::Join':
+            - ''
+            - - Ref: StackNameParam
+              - '-VpcId'
+  service:
+    Type: 'AWS::ECS::Service'
+    DependsOn:
+      - TargetGroupECS
+      - ECSNLB
+      - NLBListenerHTTP
+    Properties:
+      Cluster:
+        'Fn::ImportValue':
+          'Fn::Join':
+            - ''
+            - - Ref: StackNameParam
+              - '-ECS-CLUSTER'
+      DesiredCount:
+        Ref: DesiredCountService
+      HealthCheckGracePeriodSeconds: '900'
+      LoadBalancers:
+        - ContainerName:
+            'Fn::Join':
+              - ''
+              - - cdt-
+                - Ref: 'AWS::StackName'
+          ContainerPort:
+            Ref: ContainerExpPort
+          TargetGroupArn:
+            Ref: TargetGroupECS
+      TaskDefinition:
+        Ref: HelloWordTest
+
+  HelloWordTest:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Name:
+            'Fn::Join':
+              - ''
+              - - cdt-
+                - Ref: 'AWS::StackName'
+          Image:
+            'Fn::Join':
+              - ''
+              - - Ref: ImageURI
+                - ':'
+                - Ref: ImageVersion
+          PortMappings:
+            - ContainerPort:
+                Ref: ContainerExpPort
+          Cpu:
+            Ref: ContainerCpuUnits
+          Memory:
+            Ref: ContainerMemory
+          Essential: 'true'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Ref: CloudwatchLogsGroup
+              awslogs-region: !Sub ${AWS::Region}
+              awslogs-stream-prefix:
+                'Fn::Join':
+                  - ''
+                  - - Ref: 'AWS::StackName'
+                    - Ref: EnvSufix
+
+  CloudwatchLogsGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName:
+        'Fn::Join':
+          - '-'
+          - - ECSLogGroup
+            - Ref: 'AWS::StackName'
+      RetentionInDays: 14
+  AutoscalingRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - application-autoscaling.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: service-autoscaling
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'application-autoscaling:*'
+                  - 'cloudwatch:DescribeAlarms'
+                  - 'cloudwatch:PutMetricAlarm'
+                  - 'ecs:DescribeServices'
+                  - 'ecs:UpdateService'
+                Resource: '*'
+  Test:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName:
+        Ref: ROLE
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+                - sqs.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: service-autoscaling
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - '*'
+                Resource: '*'
+  RolePolicies:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: Test
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: '*'
+            Resource: '*'
+      Roles:
+        - Ref: Test

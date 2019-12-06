@@ -1,0 +1,26 @@
+[
+    {
+      "ParameterKey": "DBClusterIdentifierParameter",
+      "ParameterValue": "hello-word-teste"
+    },
+    {
+      "ParameterKey": "DBInstanceClassParameter",
+      "ParameterValue": "db.r4.large"
+    },
+    {
+      "ParameterKey": "DBSubnetGroupNameParameter",
+      "ParameterValue": "vpc-79845121ds654s8d"
+    },
+    {
+      "ParameterKey": "VpcSecurityGroupIdsParameter",
+      "ParameterValue": "sg-47899879456d"
+    },
+    {
+      "ParameterKey": "HostedZoneIDRoute53Parameter",
+      "ParameterValue": "TOEIREKENBCGEW"
+    },
+    {
+      "ParameterKey": "R53EntryNameParameter",
+      "ParameterValue": "aurorahelloword.dev.com"
+    
+]     

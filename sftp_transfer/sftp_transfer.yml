@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template para criacao do sftp transfer
+
+Parameters:
+  HostedZone:
+    Type: String
+    Description: HostedZoneName sem o ponto (.) no final
+    Default: dev.helloword.io
+  DnsNamePrefix:
+    Type: String
+    Description: "<this_var>.[HostedZoneName]"    
+    Default: sftp
+  Env:
+    Type: String
+    Default: dev
+
+Conditions:
+  isItProd:
+    !Or
+    - !Equals [ !Ref Env, prd ]
+    - !Equals [ !Ref Env, prdbr ]
+
+Resources:
+  VpcEndpointSftp:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !If
+            - isItProd
+            - vpc
+            - vpc-vpc
+      ServiceName: com.amazonaws.us-east-1.transfer.server           
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: 
+        - !ImportValue vpc-subnetPrvD
+      SecurityGroupIds:
+        - !Ref ElbSecurityGroup
+
+  TransferSftp:
+    Type: AWS::Transfer::Server
+    DependsOn:
+      - AccessSftpTransfer
+      - VpcEndpointSftp
+    Properties:
+      EndpointDetails: 
+        VpcEndpointId: !Ref VpcEndpointSftp
+      EndpointType: VPC_ENDPOINT
+      IdentityProviderType: SERVICE_MANAGED
+      LoggingRole: 
+        !GetAtt
+          - AccessSftpTransfer
+          - Arn
+
+  SftpElb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: sftp-elb
+      Scheme: internet-facing
+      Type: network
+      IpAddressType: ipv4
+      Subnets:
+        - Fn::ImportValue: vpc-subnetPubD
+
+  NLBListenerHTTP:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    DependsOn:
+      - SftpElb
+      - SftpTargetGroup
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            !Ref SftpTargetGroup
+      LoadBalancerArn:
+        !Ref SftpElb
+      Port: '22'
+      Protocol: TCP
+
+  ElbSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Elb Security Group
+      VpcId:
+        Fn::ImportValue:
+          !If
+            - isItProd
+            - vpc
+            - vpc-vpc
+
+  NLBSecurityGroupHTTPinbound:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId:
+        !Ref ElbSecurityGroup
+      IpProtocol: tcp
+      FromPort: '22'
+      ToPort: '22'
+      CidrIp: '0.0.0.0/0'
+
+  SftpTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn:
+      - SftpElb
+    Properties:
+      Name: sftp-tg
+      HealthCheckIntervalSeconds: 10
+      HealthCheckProtocol: TCP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2  
+      Port: '22'
+      Protocol: TCP
+      TargetType: ip
+      VpcId:
+        Fn::ImportValue:
+          !If
+            - isItProd
+            - vpc
+            - vpc-vpc
+      Targets:
+        - AvailabilityZone: us-east-1d
+          Id: 10.90.4.241
+          Port: '22'
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: '20'
+      Tags:
+        - 
+          Key: Environment
+          Value: !Ref Env
+        - 
+          Key: Product
+          Value: Sftp
+
+  SftpRecordDns:
+    Type: AWS::Route53::RecordSet
+    DependsOn: 
+      - SftpElb
+      - SftpTargetGroup
+    Properties:
+      HostedZoneName:
+        Fn::Join:
+        - ''
+        - - !Ref HostedZone
+          - "."
+      Comment: dns sftp
+      Name:
+        Fn::Join:
+        - ''
+        - - Ref: DnsNamePrefix
+          - "."
+          - Ref: HostedZone
+          - "."
+      Type: A
+      AliasTarget:
+        HostedZoneId:
+          Fn::GetAtt: SftpElb.CanonicalHostedZoneID
+        DNSName:
+          Fn::GetAtt: SftpElb.DNSName
+
+  AccessSftpTransfer:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: AccessSftpTransfer
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - transfer.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /      
+      Policies:
+        - PolicyName: sftpTransfer
+          PolicyDocument:
+            Statement:
+              - Sid: AllowListingOfUserFolder
+                Action:
+                  - 's3:*'
+                Effect: Allow
+                Resource:
+                  - 'arn:aws:s3:::*'
+              - Sid: HomeDirObjectAccess
+                Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: 'arn:aws:s3:::*/*'
+
+Outputs:
+  VpcEndpointSftp:
+    Description: 'Vpc Endpoint Sftp'
+    Value: !Ref VpcEndpointSftp
+    Export:
+      Name: !Sub 'vpcEndpoint-${AWS::StackName}'
+
+  TransferSftp:
+    Description: 'Sftp Transfer'
+    Value: !GetAtt TransferSftp.ServerId
+    Export:
+      Name: !Sub 'server-${AWS::StackName}'

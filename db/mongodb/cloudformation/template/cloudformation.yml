@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template para criação do CLuster de Mongo.
+Parameters:
+  ClusterIdentifier:
+    Description: RDS SQL Server Instance Name
+    Type: String
+
+  DatabaseUsername:
+    Description: The database admin account user name.
+    Type: String
+
+  DatabasePassword:
+    Description: The database admin account password.
+    Type: String
+
+  SecurityGroup:
+    Description: name of the security group.
+    Type: String
+
+  Subnet1:
+    Description: name of the subnet.
+    Type: String
+
+  Subnet2:
+    Description: name of the subnet.
+    Type: String
+
+Resources: 
+  helloWordCluster: 
+    Type: "AWS::DocDB::DBCluster"
+    Properties: 
+      BackupRetentionPeriod : 7
+      DBClusterIdentifier : !Ref ClusterIdentifier
+      DBClusterParameterGroupName : "default.docdb3.6" #!Ref helloWordParameterGroup
+      DBSubnetGroupName : !Ref helloWordSubnetGroup
+      MasterUsername : !Ref DatabaseUsername
+      MasterUserPassword : !Ref DatabasePassword
+      Port : "27017"
+      StorageEncrypted : true
+      VpcSecurityGroupIds:
+        - !Ref SecurityGroup
+
+  helloWordInstance:
+    DependsOn: helloWordCluster
+    Type: "AWS::DocDB::DBInstance"
+    Properties:
+      AutoMinorVersionUpgrade: true
+      AvailabilityZone: "us-east-1a"
+      DBClusterIdentifier: "helloWord"
+      DBInstanceClass: "db.r4.large"
+      DBInstanceIdentifier: "helloWord"
+
+  helloWordInstance2:
+    DependsOn: helloWordCluster
+    Type: "AWS::DocDB::DBInstance"
+    Properties:
+      AutoMinorVersionUpgrade: true
+      AvailabilityZone: "us-east-1a"
+      DBClusterIdentifier: "helloWord"
+      DBInstanceClass: "db.r4.large"
+      DBInstanceIdentifier: "helloWord2"
+
+  helloWordSubnetGroup: 
+    Type: "AWS::DocDB::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: "description"
+      SubnetIds: 
+        - !Ref Subnet1
+        - !Ref Subnet2
+
+  #helloWordParameterGroup: 
+  #  Type: "AWS::DocDB::DBClusterParameterGroup"
+  #  Properties:
+  #    Family : "docdb3.6"
+  #    Name: "docdb3.6"
+  #    Parameters : json

@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "ClusterIdentifier",
+    "ParameterValue": "helloword"
+  },
+  {
+    "ParameterKey": "DatabaseUsername",
+    "ParameterValue": "helloword"
+  },
+  {
+    "ParameterKey": "DatabasePassword",
+    "ParameterValue": "jdsdsdjakd"
+  },
+  {
+    "ParameterKey": "SecurityGroup",
+    "ParameterValue": "sg-32s447915ds5c5d"
+  },
+  {
+    "ParameterKey": "Subnet1",
+    "ParameterValue": "subnet-546847894ce465c"
+  },
+  {
+    "ParameterKey": "Subnet2",
+    "ParameterValue": "subnet-32d2c3f3uj2e2dc3"
+  }
+]
